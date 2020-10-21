@@ -4,7 +4,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Pango, GLib
 
 import gtk
-import threading
+import threading as tr
 import socket
 import struct
 import sys
@@ -71,14 +71,15 @@ class Reciever( ):
     def socket_create ( self ):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((self.mcast_grp, self.mcast_port))
+        #self.sock.bind((self.mcast_grp, self.mcast_port))
+        self.sock.bind(("", self.mcast_port))
         mreq = struct.pack("=4sl", socket.inet_aton(self.mcast_grp), socket.INADDR_ANY)
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         self.sock.settimeout(0.5)
         self.listen = True
 
         self.text.append_text( "\nListen: " + self.mcast_grp + ":" + str(self.mcast_port)+"\n" )
-        threading.Thread( target = self.threading_func ).start()
+        tr.Thread( target = self.threading_func ).start()
 
     def socket_close( self ):
         self.listen = False
@@ -86,15 +87,16 @@ class Reciever( ):
     def threading_func( self ):
         while ( self.listen ):
             try:
-                s = self.sock.recv( 1000 ).decode("utf-8")
+                s = self.sock.recv( 1000 ).decode("utf-8", "replace")
                 self.text.append_text( s )
-                print (s)
             except socket.timeout:
                 continue
 
             except:
-                self.text.append_text( "\nInternal error: " + str(sys.exc_info()[0]) +"\n" )
-                break
+               self.text.append_text( "\nInternal error: " + str(sys.exc_info()[0]) +"\n" )
+               continue
+               #break
+
         self.sock.close()
         self.text.append_text( "\nStop listen: " + self.mcast_grp + ":" + str(self.mcast_port)+"\n" )
 
@@ -107,7 +109,25 @@ class TextViewWindow(Gtk.Window):
         self.add(self.grid)
         self.create_textview()
         self.create_toolbar()
+        self.text = ""
         self.receiver = Reciever( self )
+        self.mutex = tr.Lock()
+
+        GLib.timeout_add_seconds(1, self.insert_text)
+
+    def insert_text( self ):
+        if ( 0 != len(self.text) ):
+            self.mutex.acquire()
+            self.textbuffer.insert_at_cursor( self.text )
+            self.text = ""
+            self.mutex.release()
+
+        return True
+
+    def append_text(self, text ):
+        self.mutex.acquire()
+        self.text += text
+        self.mutex.release()
 
     def create_toolbar(self):
         toolbar = Gtk.Toolbar()
@@ -151,8 +171,6 @@ class TextViewWindow(Gtk.Window):
         button_save.set_tooltip_text("Сохранить логи в файл")
         toolbar.insert(button_save, 8)
 
-    def append_text(self, text ):
-        self.textbuffer.insert_at_cursor( text )
 
     def create_textview(self):
         self.scrolledwindow = Gtk.ScrolledWindow()
@@ -232,7 +250,6 @@ class TextViewWindow(Gtk.Window):
 #        self.receiver = rec
 
     def on_recieve_clicked ( self, widget ):
-        print ( widget.get_active() )
         self.button_nc.set_sensitive( not widget.get_active() )
         if ( widget.get_active() ):
             self.receiver.socket_create()
@@ -244,5 +261,4 @@ if __name__ == '__main__':
     win = TextViewWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
-
     Gtk.main()
