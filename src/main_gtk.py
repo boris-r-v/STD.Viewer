@@ -121,21 +121,30 @@ class TextViewWindow(Gtk.Window):
             stext = self.text
             self.text = ""
             self.mutex.release()
-            beg = [match.start() for match in re.finditer('STD:WARNING', stext)]
-            end = [match.end() for match in re.finditer('STD:WARNING', stext)]
-            if ( 0 == len( beg ) ):
-                self.textbuffer.insert( self.textbuffer.get_end_iter(), stext )
-                return True
-
-            self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[ : beg[0] ] )
-            for i in range( len(beg) ):
-                self.textbuffer.insert_with_tags( self.textbuffer.get_end_iter(), stext[beg[i] : end[i]], self.tag_warning )
-                if ( i != len(beg)-1 ):
-                    self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[end[i] : beg[i+1] ] )
-                else:
-                    self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[end[i] : ] )
-
+#            print ("$$" + stext + "$$" )
+            self.mark_text( stext )
         return True
+
+    def search_and_mark_line(self, text, start, tag):
+        end = self.textbuffer.get_end_iter()
+        match = start.forward_search(text, 0, end)
+
+        if match is not None:
+            match_start, match_end = match
+            line_end = match_end.copy().forward_to_end()
+            start_it_b, start_it_e = match_start.backward_search('[', 0,  start  )
+            end_it_b, end_it_e = match_start.forward_search('\n', 0,  line_end  )
+#            print ("!!! " + start_it_b.get_text(end_it_b) + "!!!" )
+
+            self.textbuffer.apply_tag( tag, match_start, match_end )
+            self.search_and_mark_line(text, match_end, tag)
+
+    def mark_text( self, stext ):
+        _chars = self.textbuffer.get_char_count()
+        self.textbuffer.insert_at_cursor( stext )
+        _iter = self.textbuffer.get_iter_at_offset( _chars )
+        self.search_and_mark('STD:WARNING', _iter, self.tag_warning )
+        self.search_and_mark('STD:ADVICE', _iter, self.tag_advice )
 
     def append_text(self, text ):
         self.mutex.acquire()
@@ -199,9 +208,10 @@ class TextViewWindow(Gtk.Window):
 
         self.tag_found = self.textbuffer.create_tag("found", background="yellow")
         self.tag_warning = self.textbuffer.create_tag("warning", background="#25D1F0")
+        self.tag_advice = self.textbuffer.create_tag("advice", background="#FACFCF")
 
     def on_search_clicked(self, widget):
-        dialog = SearchDialog(self)
+        dialog = SearchDialog(self, self.last_find)
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
             cursor_mark = self.textbuffer.get_insert()
@@ -209,18 +219,19 @@ class TextViewWindow(Gtk.Window):
             if start.get_offset() == self.textbuffer.get_char_count():
                 start = self.textbuffer.get_start_iter()
 
-            self.search_and_mark(dialog.entry.get_text(), start)
+            self.last_find = dialog.entry.get_text()
+            self.search_and_mark(self.last_find, start, self.tag_found )
 
         dialog.destroy()
 
-    def search_and_mark(self, text, start):
+    def search_and_mark(self, text, start, tag):
         end = self.textbuffer.get_end_iter()
         match = start.forward_search(text, 0, end)
 
         if match is not None:
             match_start, match_end = match
-            self.textbuffer.apply_tag(self.tag_found, match_start, match_end)
-            self.search_and_mark(text, match_end)
+            self.textbuffer.apply_tag( tag, match_start, match_end)
+            self.search_and_mark(text, match_end, tag)
 
     def on_clear_clicked(self, widget):
         start = self.textbuffer.get_start_iter()
