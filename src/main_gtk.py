@@ -1,14 +1,12 @@
 import gi
-
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Pango, GLib
 
-import gtk
+#import gtk
 import threading as tr
-import socket
-import struct
-import sys
-import time
+import socket, struct
+import sys, time
+import platform, re
 
 class SearchDialog(Gtk.Dialog):
     def __init__(self, parent):
@@ -71,8 +69,10 @@ class Reciever( ):
     def socket_create ( self ):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        #self.sock.bind((self.mcast_grp, self.mcast_port))
-        self.sock.bind(("", self.mcast_port))
+        if ( "Windows" == platform.system() ):
+            self.sock.bind(("", self.mcast_port))
+        else:
+            self.sock.bind((self.mcast_grp, self.mcast_port))
         mreq = struct.pack("=4sl", socket.inet_aton(self.mcast_grp), socket.INADDR_ANY)
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         self.sock.settimeout(0.5)
@@ -118,9 +118,22 @@ class TextViewWindow(Gtk.Window):
     def insert_text( self ):
         if ( 0 != len(self.text) ):
             self.mutex.acquire()
-            self.textbuffer.insert_at_cursor( self.text )
+            stext = self.text
             self.text = ""
             self.mutex.release()
+            beg = [match.start() for match in re.finditer('STD:WARNING', stext)]
+            end = [match.end() for match in re.finditer('STD:WARNING', stext)]
+            if ( 0 == len( beg ) ):
+                self.textbuffer.insert( self.textbuffer.get_end_iter(), stext )
+                return True
+
+            self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[ : beg[0] ] )
+            for i in range( len(beg) ):
+                self.textbuffer.insert_with_tags( self.textbuffer.get_end_iter(), stext[beg[i] : end[i]], self.tag_warning )
+                if ( i != len(beg)-1 ):
+                    self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[end[i] : beg[i+1] ] )
+                else:
+                    self.textbuffer.insert( self.textbuffer.get_end_iter(), stext[end[i] : ] )
 
         return True
 
@@ -185,6 +198,34 @@ class TextViewWindow(Gtk.Window):
         self.textview.set_property("cursor-visible", False)
 
         self.tag_found = self.textbuffer.create_tag("found", background="yellow")
+        self.tag_warning = self.textbuffer.create_tag("warning", background="#25D1F0")
+
+    def on_search_clicked(self, widget):
+        dialog = SearchDialog(self)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            cursor_mark = self.textbuffer.get_insert()
+            start = self.textbuffer.get_iter_at_mark(cursor_mark)
+            if start.get_offset() == self.textbuffer.get_char_count():
+                start = self.textbuffer.get_start_iter()
+
+            self.search_and_mark(dialog.entry.get_text(), start)
+
+        dialog.destroy()
+
+    def search_and_mark(self, text, start):
+        end = self.textbuffer.get_end_iter()
+        match = start.forward_search(text, 0, end)
+
+        if match is not None:
+            match_start, match_end = match
+            self.textbuffer.apply_tag(self.tag_found, match_start, match_end)
+            self.search_and_mark(text, match_end)
+
+    def on_clear_clicked(self, widget):
+        start = self.textbuffer.get_start_iter()
+        end = self.textbuffer.get_end_iter()
+        self.textbuffer.remove_tag(self.tag_found, start, end)
 
     def autoscroll(self, *args):
         adj = self.scrolledwindow.get_vadjustment()
@@ -210,7 +251,6 @@ class TextViewWindow(Gtk.Window):
         except SomeError as err:
             self.append_text( 'Ошибка сохранения в %s: %s' % (filepath, err) )
 
-
     def on_network_clicked( self, widget ):
         dialog = NetworkDialog( self, self.receiver.mcast_grp, self.receiver.mcast_port  )
         response = dialog.run()
@@ -218,36 +258,6 @@ class TextViewWindow(Gtk.Window):
             self.receiver.mcast_grp = dialog.group.get_text()
             self.receiver.mcast_port = int ( dialog.port.get_value() )
         dialog.destroy()
-
-    def on_clear_clicked(self, widget):
-        start = self.textbuffer.get_start_iter()
-        end = self.textbuffer.get_end_iter()
-        self.textbuffer.remove_all_tags(start, end)
-
-    def on_search_clicked(self, widget):
-        dialog = SearchDialog(self)
-        response = dialog.run()
-        if response == Gtk.ResponseType.OK:
-            cursor_mark = self.textbuffer.get_insert()
-            start = self.textbuffer.get_iter_at_mark(cursor_mark)
-            if start.get_offset() == self.textbuffer.get_char_count():
-                start = self.textbuffer.get_start_iter()
-
-            self.search_and_mark(dialog.entry.get_text(), start)
-
-        dialog.destroy()
-
-    def search_and_mark(self, text, start):
-        end = self.textbuffer.get_end_iter()
-        match = start.forward_search(text, 0, end)
-
-        if match is not None:
-            match_start, match_end = match
-            self.textbuffer.apply_tag(self.tag_found, match_start, match_end)
-            self.search_and_mark(text, match_end)
-
-#    def set_reciever( self, rec ):
-#        self.receiver = rec
 
     def on_recieve_clicked ( self, widget ):
         self.button_nc.set_sensitive( not widget.get_active() )
