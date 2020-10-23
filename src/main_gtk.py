@@ -9,7 +9,7 @@ import sys, time
 import platform, re
 
 class SearchDialog(Gtk.Dialog):
-    def __init__(self, parent):
+    def __init__(self, parent, string ):
         Gtk.Dialog.__init__(
             self, title="Search", transient_for=parent, modal=True,
         )
@@ -26,6 +26,7 @@ class SearchDialog(Gtk.Dialog):
         box.add(label)
 
         self.entry = Gtk.Entry()
+        self.entry.set_text( string )
         box.add(self.entry)
 
         self.show_all()
@@ -112,6 +113,7 @@ class TextViewWindow(Gtk.Window):
         self.text = ""
         self.receiver = Reciever( self )
         self.mutex = tr.Lock()
+        self.last_find = ""
 
         GLib.timeout_add_seconds(1, self.insert_text)
 
@@ -179,11 +181,11 @@ class TextViewWindow(Gtk.Window):
 
         toolbar.insert(Gtk.SeparatorToolItem(), 5 )
 
-        button_rec = Gtk.ToggleToolButton()
-        button_rec.set_icon_name("media-record-symbolic")
-        button_rec.connect("clicked", self.on_recieve_clicked)
-        button_rec.set_tooltip_text("Вкл/Откл сбор логов")
-        toolbar.insert(button_rec, 6)
+        self.button_rec = Gtk.ToggleToolButton()
+        self.button_rec.set_icon_name("media-record-symbolic")
+        self.button_rec.connect("clicked", self.on_recieve_clicked)
+        self.button_rec.set_tooltip_text("Вкл/Откл сбор логов")
+        toolbar.insert(self.button_rec, 6)
 
         toolbar.insert(Gtk.SeparatorToolItem(), 7 )
 
@@ -282,4 +284,5 @@ if __name__ == '__main__':
     win = TextViewWindow()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
+    win.button_rec.set_active( True )
     Gtk.main()
