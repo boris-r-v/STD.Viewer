@@ -143,7 +143,7 @@ class TextViewWindow(Gtk.Window):
 
     def mark_text( self, stext ):
         _chars = self.textbuffer.get_char_count()
-        self.textbuffer.insert_at_cursor( stext )
+        self.textbuffer.insert( self.textbuffer.get_end_iter(), stext )
         _iter = self.textbuffer.get_iter_at_offset( _chars )
         self.search_and_mark('STD:WARNING', _iter, self.tag_warning )
         self.search_and_mark('STD:ADVICE', _iter, self.tag_advice )
